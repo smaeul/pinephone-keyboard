@@ -145,6 +145,10 @@ int read_keys(uint8_t buf[12])
 void print_bitmap(uint8_t* map)
 {
 //	printf("\033[H");
+	printf("%02x | %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x\n",
+		crc8(map, 12),
+		map[0], map[1], map[2], map[3], map[4], map[5],
+		map[6], map[7], map[8], map[9], map[10], map[11]);
 	for (int r = 0; r < 6; r++) {
 		if (r == 0) {
 			printf("   C");
