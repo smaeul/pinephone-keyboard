@@ -21,7 +21,7 @@ sdas8051 -plosgff build/stock-ivt.rel build/stock-ivt.asm
 echo Stock FW
 sdcc \
 	-mmcs51 --iram-size 256 --xram-size 2048 \
-	--code-size 0x2000 --code-loc 0x2130 \
+	--code-size 0x2000 --code-loc 0x2150 \
 	-Wl-bIVECT=0x2000 \
 	-I. \
 	-DFW_REVISION_STR="\"$(git describe) $(git log -1 --format=%cd --date=iso)\"" \

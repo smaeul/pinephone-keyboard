@@ -90,12 +90,13 @@ name'_fwd:
         irq_user   IRQ_PWMA
         irq_user   IRQ_USB
         irq_stock  IRQ_USB _usb_interrupt_fwd
-        irq_user   IRQ_I2CA
+        irq_stock  IRQ_I2CA _i2c_a_interrupt_fwd
         irq_user   IRQ_PWMB
         irq_user   IRQ_PWMC
         irq_stock  IRQ_I2CB _i2c_b_interrupt_fwd
 
 	irq_stock_fwd IRQ_TIMER1, _timer1_interrupt
 	irq_stock_fwd IRQ_PINCHANGE, _pinchange_interrupt
+	irq_stock_fwd IRQ_I2CA, _i2c_a_interrupt
 	irq_stock_fwd IRQ_I2CB, _i2c_b_interrupt
 	irq_stock_fwd IRQ_USB, _usb_interrupt

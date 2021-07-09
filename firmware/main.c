@@ -36,6 +36,9 @@
 #ifndef CONFIG_STOCK_FW
 #define CONFIG_STOCK_FW 1
 #endif
+#ifndef CONFIG_I2C_A
+#define CONFIG_I2C_A 1
+#endif
 
 #define USB_DEBUG 0
 
@@ -586,7 +589,7 @@ static volatile uint8_t __idata ro_regs[REG_KEYMATRIX_STATE_END + 1] = {
 	[REG_KEYMATRIX_SIZE] = 0xc6, // 12 x 6
 };
 
-static volatile uint8_t ctl_regs[3] = {0, 0, 0};
+static volatile uint8_t ctl_regs[4] = {0, 0, 0, 0};
 static volatile __bit sys_cmd_run = 0;
 
 static volatile uint8_t reg_addr = 0;
@@ -993,6 +996,156 @@ out_done:
 // }}}
 // {{{ I2C register access
 
+#if CONFIG_I2C_A
+
+#define CHARGER_ADDR 0x75u
+
+static __bit i2c_a_reg_read;
+static __bit i2c_a_sent_reg;
+static __bit i2c_a_sent_data;
+static volatile __bit i2c_a_done;
+static volatile uint8_t i2c_a_data;
+
+void i2c_a_interrupt(void) __interrupt(IRQ_I2CA) __using(1)
+{
+	uint8_t saved_page = PAGESW;
+	PAGESW = 0;
+
+	uint8_t cr1 = P0_I2CACR1;
+	uint8_t sa = P0_I2CASA;
+	uint8_t sf = P0_I2CASF;
+
+	// clear flags
+	//puts(" !");
+	//put_hex_b(sf);
+	//puts("/");
+	//put_hex_b(cr1);
+	P0_I2CASF = 0;
+
+	// rx data available
+	if (sf & BIT(1)) {
+		i2c_a_data = P0_I2CADB;
+		puts(" <");
+		put_hex_b(i2c_a_data);
+		goto out_restore_page;
+	}
+
+	// handle stop condition
+	if (sf & BIT(2)) {
+		if (i2c_a_sent_data) {
+			P0_EIE2 &= ~BIT(5); // I2CAIE
+			i2c_a_done = 1;
+			puts(" stop\n");
+		} else {
+			puts(" S?");
+		}
+		goto out_restore_page;
+	}
+
+	// tx buffer not empty???
+	if (!(sf & BIT(0))) {
+		//puts(" ???");
+		puts(" !");
+		put_hex_b(cr1);
+		goto out_restore_page;
+	}
+
+	uint8_t val = 0;
+	if (!i2c_a_sent_reg) {
+		// send register address
+		val = REG_SYS(I2CA_ADDR);
+		P0_I2CADB = val;
+		i2c_a_sent_reg = 1;
+	} else if (!i2c_a_reg_read) {
+		// send register value
+		val = i2c_a_data;
+		P0_I2CADB = val;
+		i2c_a_sent_data = 1;
+	} else if (!(sa & BIT(0))) {
+		// start rx half of xfer
+		sa |= BIT(0);
+		val = sa;
+		P0_I2CASA = sa;
+	} else {
+		// trigger rx data
+		i2c_a_sent_data = 1;
+	}
+
+	if (i2c_a_sent_data)
+		P0_I2CACR1 |= BIT(4) | BIT(7); // stop after xfer
+	else
+		P0_I2CACR1 |= BIT(7); // start xfer
+	if (sa & BIT(0)) {
+		puts(" R");
+	} else {
+		puts(" >");
+	}
+	put_hex_b(val);
+	if (i2c_a_sent_data)
+		puts(" Q");
+
+out_restore_page:
+	PAGESW = saved_page;
+}
+
+static void i2c_a_xfer(void)
+{
+	uint8_t saddr = CHARGER_ADDR << 1 | 0;
+
+	i2c_a_sent_reg = 0;
+	i2c_a_sent_data = 0;
+	i2c_a_done = 0;
+
+	PAGESW = 0;
+
+	puts("i2ca: >");
+	put_hex_b(saddr);
+	P0_I2CASA = saddr;
+
+	P0_I2CACR1 &= ~BIT(4); // do not stop
+	P0_I2CACR1 |= BIT(7); // start xfer
+
+	P0_EIE2 |= BIT(5); // I2CAIE
+
+	//while (!i2c_a_done); // wait while busy
+	//puts(" done\n");
+
+	//REG_SYS(I2CA_ADDR)++;
+}
+
+static uint8_t i2c_a_read_reg(void)
+{
+	i2c_a_reg_read = 1;
+
+	i2c_a_xfer();
+
+	return i2c_a_data;
+}
+
+static void i2c_a_write_reg(uint8_t val)
+{
+	i2c_a_reg_read = 0;
+
+	i2c_a_data = val;
+	i2c_a_xfer();
+}
+
+static void i2c_a_init(void)
+{
+	PAGESW = 0;
+
+	P0_I2CACR1 = BIT(6); // master mode
+	P0_I2CACR2 = BIT(5) | 0x07 << 1 | BIT(0);  // 100kHz mode, enable
+}
+
+#else
+
+void i2c_a_interrupt(void) __interrupt(IRQ_I2CA) __using(1)
+{
+}
+
+#endif
+
 // only call this in interrupt context from regbank 1!
 static uint8_t reg_get_value(void) __using(1)
 {
@@ -1013,8 +1166,12 @@ static uint8_t reg_get_value(void) __using(1)
 		return ro_regs[reg_addr];
 	} else if (reg_addr < REG_SYS_CONFIG) {
 		goto none;
-	} else if (reg_addr <= REG_SYS_USER_APP_BLOCK) {
+	} else if (reg_addr <= REG_SYS_I2CA_ADDR) {
 		return ctl_regs[reg_addr - REG_SYS_CONFIG];
+#if CONFIG_I2C_A
+	} else if (reg_addr == REG_SYS_I2CA_DATA) {
+		return i2c_a_read_reg();
+#endif
 #if CONFIG_FLASH_ENABLE
 	} else if (reg_addr < REG_FLASH_DATA_START) {
 		goto none;
@@ -1034,7 +1191,7 @@ static void reg_set_value(uint8_t val) __using(1)
 {
 	if (reg_addr < REG_SYS_CONFIG) {
 		return;
-	} else if (reg_addr <= REG_SYS_USER_APP_BLOCK) {
+	} else if (reg_addr <= REG_SYS_I2CA_ADDR) {
 		if (reg_addr == REG_SYS_COMMAND) {
 			if (sys_cmd_run)
 				return;
@@ -1042,6 +1199,10 @@ static void reg_set_value(uint8_t val) __using(1)
 		}
 
 		ctl_regs[reg_addr - REG_SYS_CONFIG] = val;
+#if CONFIG_I2C_A
+	} else if (reg_addr == REG_SYS_I2CA_DATA) {
+		i2c_a_write_reg(val);
+#endif
 #if CONFIG_FLASH_ENABLE
 	} else if (reg_addr < REG_FLASH_DATA_START) {
 		return;
@@ -1714,7 +1875,7 @@ void main(void)
 
 	// power down unused peripherlas
 	P0_DEVPD1 |= BIT(6) | BIT(5) | BIT(3) | BIT(1); // PWM A, timer 3, SPI, LVD
-	P0_DEVPD2 |= BIT(6) | BIT(3) | BIT(0); // PWM C, PWM B, I2C A
+	P0_DEVPD2 |= BIT(6) | BIT(3); // PWM C, PWM B
 	P0_DEVPD3 |= BIT(2) | BIT(1) | BIT(0); // PWM E, PWM D, PWM F
 
 	// keep UART, SPI, and I2C A in reset
@@ -1737,6 +1898,9 @@ void main(void)
 	puts("ppkb firmware " FW_REVISION_STR " (user)\n");
 #endif
 
+#if CONFIG_I2C_A
+	i2c_a_init();
+#endif
 	i2c_slave_init();
 
 	T1_SET_TIMEOUT(40000);
