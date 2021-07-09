@@ -4,7 +4,7 @@ OUT ?= build/
 CFLAGS ?= -O2 -g0
 CFLAGS += -DVERSION="\"$(VERSION)\"" -I. -I$(OUT)
 
-all: $(OUT)ppkb-i2c-inputd $(OUT)ppkb-usb-flasher $(OUT)ppkb-usb-debugger $(OUT)fw-stock.bin $(OUT)ppkb-i2c-debugger $(OUT)ppkb-i2c-charger-ctl $(OUT)ppkb-i2c-flasher $(OUT)ppkb-i2c-selftest
+all: $(OUT)ppkb-usb-flasher $(OUT)ppkb-usb-debugger $(OUT)fw-stock.bin $(OUT)ppkb-i2c-debugger $(OUT)ppkb-i2c-charger-ctl $(OUT)ppkb-i2c-flasher $(OUT)ppkb-i2c-selftest
 
 $(OUT)ppkb-usb-flasher: usb-flasher.c common.c
 	@mkdir -p $(OUT)
