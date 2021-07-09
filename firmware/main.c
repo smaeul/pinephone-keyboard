@@ -493,16 +493,16 @@ static uint8_t keyscan_scan(uint8_t* res)
 
 static void ext_int_assert(void)
 {
-	P90 = 0;
-	PAGESW = 1;
-	P1_P9M0 &= ~BIT(0);
+	P70 = 0;
+	PAGESW = 0;
+	P0_P7M0 &= ~BIT(3);
 }
 
 static void ext_int_deassert(void)
 {
-	P90 = 0;
-	PAGESW = 1;
-	P1_P9M0 |= BIT(0);
+	P70 = 0;
+	PAGESW = 0;
+	P0_P7M0 |= BIT(3);
 }
 
 // }}}
