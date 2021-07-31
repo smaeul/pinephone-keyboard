@@ -1744,9 +1744,18 @@ void main(void)
 
 	usb_disable();
 
-#if !CONFIG_USB_STACK
 	PAGESW = 1;
 
+#if CONFIG_USB_STACK && !CONFIG_STOCK_FW
+	// USB on USB pins
+	P1_USBCTRL |= BIT(7);
+
+	// turn on PLL48
+	P1_UDCCTRL &= ~BIT(0);
+
+	// turn on USB resources
+	P1_USBCTRL &= ~(BIT(0) | BIT(1));
+#elif !CONFIG_USB_STACK
 	// GPIO on USB pins
 	P1_USBCTRL &= ~BIT(7);
 
