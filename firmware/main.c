@@ -1862,8 +1862,8 @@ void main(void)
 #endif
 
 #if CONFIG_USB_STACK
-		// after 500ms, init usb
-		if (!usb_initialized && ticks > 500 / 20) {
+		// after 1500ms, init usb
+		if (!usb_initialized && ticks > 1500 / 20) {
 			usb_init();
 			usb_initialized = 1;
 		}
