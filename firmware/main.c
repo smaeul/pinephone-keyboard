@@ -963,6 +963,20 @@ static void self_test_run(void)
 
 #define REG_SYS(n) ctl_regs[REG_SYS_##n - REG_SYS_CONFIG]
 
+static void charger_i2c_disable(void)
+{
+	// drive P87 low
+	P8 &= ~0x80;
+	ro_regs[REG_FW_STATUS] &= ~REG_FW_STATUS_CHG_I2C_ENABLED;
+}
+
+static void charger_i2c_enable(void)
+{
+	// drive P87 high
+	P8 |= 0x80;
+	ro_regs[REG_FW_STATUS] |= ~REG_FW_STATUS_CHG_I2C_ENABLED;
+}
+
 static void exec_system_command(void)
 {
 	if (!sys_cmd_run)
@@ -980,6 +994,10 @@ static void exec_system_command(void)
 #endif
 	} else if (REG_SYS(COMMAND) == REG_SYS_COMMAND_USB_IAP) {
 		jump_to_usb_bootloader = 1;
+	} else if (REG_SYS(COMMAND) == REG_SYS_COMMAND_DISABLE_CHG_I2C) {
+		charger_i2c_disable();
+	} else if (REG_SYS(COMMAND) == REG_SYS_COMMAND_ENABLE_CHG_I2C) {
+		charger_i2c_enable();
 	} else {
 		REG_SYS(COMMAND) = 0xff;
 		goto out_done;
@@ -1755,18 +1773,66 @@ void main(void)
 	// turn on USB resources
 	P1_USBCTRL &= ~(BIT(0) | BIT(1));
 #elif !CONFIG_USB_STACK
+	puts(" USB: ");
+	put_hex_b(P1_USBCTRL);
+
+	puts(" PHY0: ");
+	put_hex_b(P1_PHYTEST0);
+
+	puts(" PHY1: ");
+	put_hex_b(P1_PHYTEST1);
+
 	// GPIO on USB pins
 	P1_USBCTRL &= ~BIT(7);
+	P1_USBCTRL |= BIT(1);
+	delay_us(10);
+
+	puts(" ... USB: ");
+	put_hex_b(P1_USBCTRL);
+
+	puts(" PHY0: ");
+	put_hex_b(P1_PHYTEST0);
+
+	puts(" PHY1: ");
+	put_hex_b(P1_PHYTEST1);
 
 	// turn off PLL48
 	P1_UDCCTRL |= BIT(0);
 
 	// turn off unused USB resources (phy power down, PLL48 powerdown
-	P1_USBCTRL |= BIT(0) | BIT(1);
+	P1_USBCTRL |= BIT(0);
 
 	// enable auto-tuning internal RC oscillator based on USB SOF packets
 	P1_IRCCTRL |= BIT(1); // enable manual trim
 #endif
+
+	// configure GPIO (must be done after disabling USB)
+	PAGESW = 0;
+
+	// drive P87 low
+	P8 &= ~0x80;
+	P0_P8M0 &= ~0x80;
+
+	puts(" P8: ");
+	put_hex_b(P8);
+
+	// drive P74 (D+) high, set P75 (D-) as input
+	P7 = 0xff;
+	P0_P7M0 = 0x00;
+	P7 = 0xff;
+
+	puts(" P7: ");
+	put_hex_b(P7);
+	puts(" P7M0: ");
+	put_hex_b(P0_P7M0);
+
+	PAGESW = 1;
+	//P1_PHDSC2 = 0x02;
+
+	puts(" drive2: ");
+	put_hex_b(P1_PHDSC2);
+
+	puts("\n");
 
 #if CONFIG_FLASH_ENABLE
 	for (uint8_t i = 0; i < 128; i++)
@@ -1858,6 +1924,18 @@ void main(void)
 		// every 20ms we will get here to perform some timed tasks
 		ticks++;
 		run_timed_tasks = 0;
+
+		// count how many ticks charger INT is low
+		static uint8_t charger_int_low;
+		if ((P7 & 0x20) == 0) {
+			// disable charger I2C after 100ms
+			if (charger_int_low == 4)
+				charger_i2c_disable();
+			else
+				charger_int_low++;
+		} else {
+			charger_int_low = 0;
+		}
 
 #if CONFIG_STOCK_FW
 		// after 1s check if we should jump to user firmware
